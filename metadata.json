@@ -1,0 +1,7 @@
+{
+  "name": "ScholarGPA - US Student GPA Calculator",
+  "description": "A comprehensive GPA calculator for US students supporting weighted, unweighted, and various grading scales with AI-powered academic insights.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
