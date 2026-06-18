@@ -1,7 +1,9 @@
 
-import { CourseType, GPASettings } from './types';
+import { CourseType, GPASettings, GradingScale, WeightingMethod } from './types';
 
 export const DEFAULT_SETTINGS: GPASettings = {
+  gradingScale: GradingScale.FourPoint,
+  weightingMethod: WeightingMethod.Weighted,
   weights: {
     [CourseType.Regular]: 5.0,
     [CourseType.Honors]: 5.5,

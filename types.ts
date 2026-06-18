@@ -7,12 +7,27 @@ export enum CourseType {
   DualEnrollment = 'Dual Enrollment'
 }
 
+export enum GradingScale {
+  FourPoint = '4.0',
+  FivePoint = '5.0',
+  Percentage = 'Percentage'
+}
+
+export enum WeightingMethod {
+  Weighted = 'Weighted',
+  Unweighted = 'Unweighted'
+}
+
 export interface Course {
   id: string;
   name: string;
   gradePercent: number; // Numeric grade only (e.g. 95)
+  gradeLetter?: string; // Letter grade e.g. A, B, C+, F
   type: CourseType;
   credits: number;
+  studyTimeLogged?: number; // In seconds
+  subject?: string;
+  semester?: string;
 }
 
 export interface Assignment {
@@ -30,6 +45,8 @@ export interface CalculationResult {
 }
 
 export interface GPASettings {
+  gradingScale?: GradingScale;
+  weightingMethod?: WeightingMethod;
   weights: {
     [key in CourseType]: number;
   };

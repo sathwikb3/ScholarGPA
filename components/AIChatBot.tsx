@@ -12,7 +12,7 @@ interface AIChatBotProps {
   courses: Course[];
   result: CalculationResult;
   settings: GPASettings;
-  activeView?: 'calculator' | 'grade' | 'admissions' | 'guide';
+  activeView?: 'calculator' | 'grade' | 'admissions' | 'guide' | 'timer';
 }
 
 interface Message {
