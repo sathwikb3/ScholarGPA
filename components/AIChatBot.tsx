@@ -13,6 +13,7 @@ interface AIChatBotProps {
   result: CalculationResult;
   settings: GPASettings;
   activeView?: 'calculator' | 'grade' | 'admissions' | 'guide' | 'timer';
+  onSettingsUpdate?: (settings: Partial<GPASettings>) => void;
 }
 
 interface Message {
@@ -20,7 +21,7 @@ interface Message {
   content: string;
 }
 
-const AIChatBot: React.FC<AIChatBotProps> = ({ courses, result, settings, activeView = 'calculator' }) => {
+const AIChatBot: React.FC<AIChatBotProps> = ({ courses, result, settings, activeView = 'calculator', onSettingsUpdate }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
     { role: 'assistant', content: "Hi! I'm Grant, your graduation-ready Scholar Advisor. How can I help you optimize your grades today?" }
@@ -83,6 +84,24 @@ const AIChatBot: React.FC<AIChatBotProps> = ({ courses, result, settings, active
       
       const data = await response.json();
       setMessages([...newMessages, { role: 'assistant', content: data.text || "I couldn't process that. Please try again." }]);
+      if (data.updatedSettings && onSettingsUpdate) {
+        const { gradingScale, weightingMethod, honorsBoost, apIbBoost, dualEnrollmentBoost } = data.updatedSettings;
+        const newSettings: Partial<GPASettings> = {};
+        if (gradingScale !== undefined) newSettings.gradingScale = gradingScale;
+        if (weightingMethod !== undefined) newSettings.weightingMethod = weightingMethod;
+        
+        if (honorsBoost !== undefined || apIbBoost !== undefined || dualEnrollmentBoost !== undefined) {
+           const regularWeight = settings.weights['Regular' as any] || 5.0;
+           newSettings.weights = {
+             ...settings.weights,
+             ...(honorsBoost !== undefined ? { 'Honors': regularWeight + honorsBoost } : {}),
+             ...(apIbBoost !== undefined ? { 'AP': regularWeight + apIbBoost, 'IB': regularWeight + apIbBoost } : {}),
+             ...(dualEnrollmentBoost !== undefined ? { 'Dual Enrollment': regularWeight + dualEnrollmentBoost } : {})
+           } as any;
+        }
+
+        onSettingsUpdate(newSettings);
+      }
     } catch (error) {
       setMessages([...newMessages, { role: 'assistant', content: "Sorry, I'm having trouble connecting right now." }]);
     } finally {

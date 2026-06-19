@@ -122,15 +122,52 @@ Additional Comments/Context: ${additionalComments || 'None'}
           You are friendly, encouraging, and wear a virtual graduation cap with pride.
           Be extremely concise. Use punchy, actionable insights. 
           Avoid conversational filler. Use bold text for key metrics.
-          Context: ${context}`,
+          Context: ${context}
+          If the user tells you how their school calculates GPA in terms of Grading Scale and Weighting Method, you MUST use the update_gpa_settings tool to adapt the program.`,
+           tools: [{
+             functionDeclarations: [
+               {
+                 name: "update_gpa_settings",
+                 description: "Update the user's GPA calculation grading scale, weighting method, and specific course weight bonuses.",
+                 parameters: {
+                   type: Type.OBJECT,
+                   properties: {
+                     gradingScale: { type: Type.STRING, enum: ["4.0", "5.0", "6.0", "Percentage"], description: "The unweighted grading scale" },
+                     weightingMethod: { type: Type.STRING, enum: ["Weighted", "Unweighted"], description: "Whether to apply a bonus for course rigor" },
+                     honorsBoost: { type: Type.NUMBER, description: "Bonus points for Honors classes (e.g. 0.5 or 1.0)" },
+                     apIbBoost: { type: Type.NUMBER, description: "Bonus points for AP or IB classes (e.g. 1.0 or 2.0)" },
+                     dualEnrollmentBoost: { type: Type.NUMBER, description: "Bonus points for Dual Enrollment classes (e.g. 1.0 or 2.0)" }
+                   },
+                   required: ["gradingScale", "weightingMethod"]
+                 }
+               }
+             ]
+           }]
          },
          history: messages.map((m: any) => ({
            role: m.role === 'user' ? 'user' : 'model',
            parts: [{ text: m.content }]
          }))
        });
-       const response = await chat.sendMessage({ message });
-       res.json({ text: response.text });
+       let response = await chat.sendMessage({ message });
+       let updatedSettings = null;
+
+       if (response.functionCalls && response.functionCalls.length > 0) {
+           const call = response.functionCalls[0];
+           if (call.name === 'update_gpa_settings') {
+               updatedSettings = call.args;
+               response = await chat.sendMessage({
+                 message: [{
+                   functionResponse: {
+                     name: 'update_gpa_settings',
+                     response: { success: true }
+                   }
+                 }]
+               });
+           }
+       }
+
+       res.json({ text: response.text, updatedSettings });
     } catch(err) {
        console.error(err);
        res.status(500).json({ error: "Chat failed" });
@@ -144,19 +181,13 @@ Additional Comments/Context: ${additionalComments || 'None'}
         model: 'gemini-3-flash-preview',
         contents: req.body.prompt,
         config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: { name: { type: Type.STRING }, grade: { type: Type.NUMBER }, type: { type: Type.STRING } },
-              required: ["name", "grade", "type"]
-            }
-          }
+          responseMimeType: "application/json"
         }
       });
       res.json({ result: response.text || "[]" });
-    } catch(err) { res.status(500).json({ error: "failed" }); }
+    } catch(err: any) { 
+      res.status(500).json({ error: "failed", details: err.message || JSON.stringify(err) }); 
+    }
   });
 
   app.post("/api/parse-grades-image", async (req, res) => {
@@ -166,19 +197,13 @@ Additional Comments/Context: ${additionalComments || 'None'}
         model: 'gemini-3-flash-preview',
         contents: { parts: [{ inlineData: { data: req.body.base64Image, mimeType: req.body.mimeType } }, { text: req.body.prompt }] },
         config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: { name: { type: Type.STRING }, grade: { type: Type.NUMBER }, type: { type: Type.STRING } },
-              required: ["name", "grade", "type"]
-            }
-          }
+          responseMimeType: "application/json"
         }
       });
       res.json({ result: response.text || "[]" });
-    } catch(err) { res.status(500).json({ error: "failed" }); }
+    } catch(err: any) { 
+      res.status(500).json({ error: "failed", details: err.message || JSON.stringify(err) }); 
+    }
   });
   
   app.post("/api/parse-assignments-image", async (req, res) => {

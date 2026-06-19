@@ -28,6 +28,22 @@ import {
   ListTodo, Info, Sparkles, ArrowRightLeft, LogOut, LogIn, Download, Timer
 } from 'lucide-react';
 
+export const percentToLetter = (percent: number) => {
+  if (percent >= 97) return 'A+';
+  if (percent >= 93) return 'A';
+  if (percent >= 90) return 'A-';
+  if (percent >= 87) return 'B+';
+  if (percent >= 83) return 'B';
+  if (percent >= 80) return 'B-';
+  if (percent >= 77) return 'C+';
+  if (percent >= 73) return 'C';
+  if (percent >= 70) return 'C-';
+  if (percent >= 67) return 'D+';
+  if (percent >= 63) return 'D';
+  if (percent >= 60) return 'D-';
+  return 'F';
+};
+
 type ViewType = 'calculator' | 'grade' | 'admissions' | 'guide' | 'timer';
 
 const App: React.FC = () => {
@@ -91,6 +107,14 @@ const App: React.FC = () => {
         console.error("Failed to parse settings", e);
       }
     }
+    const savedCourses = localStorage.getItem('scholar_gpa_courses');
+    if (savedCourses) {
+      try {
+        setCourses(JSON.parse(savedCourses));
+      } catch (e) {
+        console.error("Failed to parse courses", e);
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -100,6 +124,13 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('scholar_gpa_settings', JSON.stringify(settings));
   }, [settings]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      localStorage.setItem('scholar_gpa_courses', JSON.stringify(courses));
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [courses]);
 
   const resizeImage = (file: File, maxWidth = 1000): Promise<{base64: string, mimeType: string}> => {
     return new Promise((resolve, reject) => {
@@ -162,12 +193,22 @@ const App: React.FC = () => {
      if (extracted && extracted.length > 0) {
          const newCourses: Course[] = extracted.map(c => ({
              id: uuidv4(),
-             name: c.name,
-             gradePercent: c.grade,
-             type: mapScannedTypeToEnum(c.type),
-             credits: 1
+             name: c.courseName || (c as any).name || 'Unknown Course',
+             gradePercent: c.grade || 0,
+             gradeLetter: percentToLetter(c.grade || 0),
+             type: mapScannedTypeToEnum(c.level || (c as any).type),
+             credits: c.credits !== undefined ? c.credits : 1
          }));
-         setCourses(newCourses);
+         setCourses(prev => {
+             // If the existing list is just the default empty placeholder, replace it entirely
+             if (prev.length === 1 && prev[0].name === '') {
+                 return newCourses;
+             }
+             if (prev.length === 0) return newCourses;
+             
+             // Check if we should merge or append... Let's just append to be safe!
+             return [...prev, ...newCourses];
+         });
       }
   };
 
@@ -270,33 +311,20 @@ const App: React.FC = () => {
             break;
       }
 
-      if (scale === GradingScale.FivePoint && point > 0) {
+      if ((scale === GradingScale.FivePoint || scale === GradingScale.SixPoint) && point > 0) {
         point += 1;
       }
       return point;
     };
 
-    const percentToLetter = (percent: number) => {
-      if (percent >= 97) return 'A+';
-      if (percent >= 93) return 'A';
-      if (percent >= 90) return 'A-';
-      if (percent >= 87) return 'B+';
-      if (percent >= 83) return 'B';
-      if (percent >= 80) return 'B-';
-      if (percent >= 77) return 'C+';
-      if (percent >= 73) return 'C';
-      if (percent >= 70) return 'C-';
-      if (percent >= 67) return 'D+';
-      if (percent >= 63) return 'D';
-      if (percent >= 60) return 'D-';
-      return 'F';
-    };
+
 
     courses.forEach(course => {
         const credits = course.credits || 0;
         totalCredits += credits;
 
         const isPercentage = settings.gradingScale === GradingScale.Percentage;
+        const isSixPoint = settings.gradingScale === GradingScale.SixPoint;
         
         let unweightedBase = 0;
         let weightedBase = 0;
@@ -311,6 +339,25 @@ const App: React.FC = () => {
                 } else if (course.type === CourseType.Honors) {
                     weightedBase += 5;
                 }
+            }
+        } else if (
+            settings.gradingScale === GradingScale.SixPoint || 
+            (settings.weightingMethod === WeightingMethod.Weighted && 
+             (settings.gradingScale === GradingScale.FivePoint || settings.gradingScale === GradingScale.FourPoint))
+        ) {
+            let offset = 0;
+            if (settings.gradingScale === GradingScale.FivePoint) offset = 1;
+            if (settings.gradingScale === GradingScale.FourPoint) offset = 2;
+            
+            const basePoints = (course.gradePercent - 50) / 10;
+            
+            unweightedBase = basePoints - offset;
+            weightedBase = unweightedBase;
+            
+            if (settings.weightingMethod === WeightingMethod.Weighted) {
+                const regularWeight = settings.weights[CourseType.Regular] || 5.0;
+                const classWeight = settings.weights[course.type] || regularWeight;
+                weightedBase += (classWeight - regularWeight);
             }
         } else {
             const letter = course.gradeLetter || percentToLetter(course.gradePercent);
@@ -526,8 +573,9 @@ const App: React.FC = () => {
                                 className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-800 font-medium text-slate-700 bg-white"
                             >
                                 <option value={`${GradingScale.FourPoint}-${WeightingMethod.Unweighted}`}>Unweighted 4.0 Scale</option>
-                                <option value={`${GradingScale.FourPoint}-${WeightingMethod.Weighted}`}>Weighted 4.0 Scale (Standard +1 max)</option>
+                                <option value={`${GradingScale.FourPoint}-${WeightingMethod.Weighted}`}>Weighted 4.0 Scale</option>
                                 <option value={`${GradingScale.FivePoint}-${WeightingMethod.Weighted}`}>Weighted 5.0 Scale</option>
+                                <option value={`${GradingScale.SixPoint}-${WeightingMethod.Weighted}`}>Weighted 6.0 Scale</option>
                                 <option value={`${GradingScale.Percentage}-${WeightingMethod.Unweighted}`}>100-Point (% Numeric Average)</option>
                                 <option value={`${GradingScale.Percentage}-${WeightingMethod.Weighted}`}>100-Point (% Weighted Numeric)</option>
                             </select>
@@ -658,6 +706,15 @@ const App: React.FC = () => {
         )}
       </main>
 
+      <footer className="max-w-6xl mx-auto px-4 py-8 mt-12 border-t border-slate-200 text-center">
+        <p className="text-slate-500 text-sm">
+          Any questions, feedback, or concerns? Please contact{' '}
+          <a href="mailto:sathwikbavirisetty654@gmail.com" className="text-blue-600 hover:text-blue-800 font-medium transition-colors">
+            sathwikbavirisetty654@gmail.com
+          </a>
+        </p>
+      </footer>
+
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} settings={settings} onUpdate={setSettings} />
       <HistoryModal isOpen={isHistoryOpen} onClose={() => setIsHistoryOpen(false)} history={history} onDelete={(id) => setHistory(h => h.filter(e => e.id !== id))} onOpenAddPastGpa={() => setIsAddPastGpaOpen(true)} />
       <SaveSnapshotModal isOpen={isSaveSnapshotOpen} onClose={() => setIsSaveSnapshotOpen(false)} onSave={handleSaveSnapshot} />
@@ -670,6 +727,7 @@ const App: React.FC = () => {
         result={calculationResult} 
         settings={settings} 
         activeView={activeView}
+        onSettingsUpdate={(newSettings) => setSettings(prev => ({ ...prev, ...newSettings }))}
       />
     </div>
   );

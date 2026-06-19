@@ -63,38 +63,29 @@ const CourseRow: React.FC<CourseRowProps> = ({ course, settings, onChange, onRem
 
       <div className="w-full md:w-32">
         <label className="block text-[10px] text-slate-400 mb-1 md:hidden uppercase tracking-wider">Grade</label>
-        {isPercentageScale ? (
-          <div className="relative">
-            <input
-              type="number"
-              min="0"
-              max="120"
-              value={course.gradePercent}
-              onChange={(e) => {
-                const val = e.target.value === '' ? 0 : parseFloat(e.target.value);
-                onChange(course.id, 'gradePercent', val);
-              }}
-              className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-800 focus:border-blue-800 text-sm font-medium text-slate-700"
-              placeholder="0-100"
-            />
-            <span className="absolute right-3 top-2 text-slate-400 text-xs font-medium">%</span>
+        <div className="relative">
+          <input
+            type="number"
+            min="0"
+            max="120"
+            value={course.gradePercent}
+            onChange={(e) => {
+              const val = e.target.value === '' ? 0 : parseFloat(e.target.value);
+              onChange(course.id, 'gradePercent', val);
+              onChange(course.id, 'gradeLetter', percentToLetter(val));
+            }}
+            className="w-full pl-3 pr-16 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-800 focus:border-blue-800 text-sm font-medium text-slate-700"
+            placeholder="0-100"
+          />
+          <div className="absolute right-3 top-2 flex items-center gap-1">
+            <span className="text-slate-400 text-xs font-medium">%</span>
+            {!isPercentageScale && (
+              <span className="bg-slate-100 text-slate-600 text-[10px] px-1.5 py-0.5 rounded font-bold border border-slate-200">
+                {currentLetter}
+              </span>
+            )}
           </div>
-        ) : (
-          <div className="relative">
-            <select
-              value={currentLetter}
-              onChange={(e) => onChange(course.id, 'gradeLetter', e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-800 focus:border-blue-800 text-sm bg-white font-medium appearance-none pr-8 text-slate-700"
-            >
-              {LETTER_GRADES.map(lg => (
-                <option key={lg} value={lg}>{lg}</option>
-              ))}
-            </select>
-            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-400">
-                <svg className="h-4 w-4 fill-current" viewBox="0 0 20 20"><path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/></svg>
-            </div>
-          </div>
-        )}
+        </div>
       </div>
 
       <div className="w-full md:w-24">

@@ -21,9 +21,10 @@ export const analyzeGrades = async (
 };
 
 export interface ExtractedCourse {
-  name: string;
+  courseName: string;
   grade: number;
-  type: string;
+  level: string;
+  credits?: number;
 }
 
 export const suggestColleges = async (
@@ -45,8 +46,19 @@ export const suggestColleges = async (
 
 export const parseGradesFromText = async (rawText: string): Promise<ExtractedCourse[]> => {
   const prompt = `
-    Extract courses and percentage grades from this student portal snippet.
-    Classify Level: "AP", "Honors", "Dual Enrollment", "Regular".
+    Analyze this text from a high school transcript and extract the courses using this exact schema:
+    [{"courseName": "String", "grade": Number (0-100), "credits": Number, "level": "Regular" | "Honors" | "AP" | "IB" | "Dual Enrollment"}]
+
+    Rules:
+    1. Extract full academic title of the class.
+    2. Grade must be a final percentage (e.g. 94). Prefer final or semester over progress or quarter.
+    3. Extract credits (e.g. 0.5, 1.0). Default to 1.0 if not listed.
+    4. Level rules:
+       - Starts/contains "AP", "Advanced Placement", "‡" -> AP
+       - Contains/ends "Honors", "Hon", "H", "*" -> Honors
+       - "IB" or "International Baccalaureate" -> IB
+       - "DE" or "Dual Enroll" -> Dual Enrollment
+       - Otherwise -> Regular
     
     Text: ${rawText}
   `;
@@ -66,10 +78,20 @@ export const parseGradesFromText = async (rawText: string): Promise<ExtractedCou
 
 export const parseGradesFromImage = async (base64Image: string, mimeType: string): Promise<ExtractedCourse[]> => {
   const prompt = `
-    Extract grades from the report card image.
-    1. Only numeric percentage for "grade" (e.g. 94).
-    2. Course name from the first column.
-    3. Determine type: AP/Honors/Regular/Dual Enrollment/IB.
+    Analyze this report card image and extract the courses.
+    Return using exactly this JSON array schema:
+    [{"courseName": "String", "grade": Number (0-100), "credits": Number, "level": "Regular" | "Honors" | "AP" | "IB" | "Dual Enrollment"}]
+
+    Rules:
+    1. Extract full academic title of the class.
+    2. Grade must be a final percentage. Look for the final/semester grade column (e.g., "Sem 1", "Final").
+    3. Extract credits. Default to 1.0 if missing.
+    4. Level rules:
+       - Starts/contains "AP", "Advanced Placement", "‡" -> AP
+       - Contains/ends "Honors", "Hon", "H", "*" -> Honors
+       - "IB" or "International Baccalaureate" -> IB
+       - "DE" or "Dual Enroll" -> Dual Enrollment
+       - Otherwise -> Regular
   `;
 
   try {
@@ -78,9 +100,20 @@ export const parseGradesFromImage = async (base64Image: string, mimeType: string
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ base64Image, mimeType, prompt }),
     });
+    if (!res.ok) {
+        throw new Error("Failed server response");
+    }
     const data = await res.json();
-    return JSON.parse(data.result || "[]");
+    let resultJSON = data.result || "[]";
+    // clean markdown blocks if any
+    resultJSON = resultJSON.replace(/```json/g, "").replace(/```/g, "");
+    const parsed = JSON.parse(resultJSON);
+    if (!parsed || parsed.length === 0) {
+      console.warn("Gemini returned empty array for image. Raw response:", data.result);
+    }
+    return parsed;
   } catch (error) {
+    console.error("parseGradesFromImage Error:", error);
     throw new Error("Processing error.");
   }
 };

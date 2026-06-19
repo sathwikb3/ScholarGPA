@@ -10,6 +10,7 @@ export enum CourseType {
 export enum GradingScale {
   FourPoint = '4.0',
   FivePoint = '5.0',
+  SixPoint = '6.0',
   Percentage = 'Percentage'
 }
 
