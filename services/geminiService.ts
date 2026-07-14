@@ -21,10 +21,9 @@ export const analyzeGrades = async (
 };
 
 export interface ExtractedCourse {
-  courseName: string;
+  name: string;
   grade: number;
-  level: string;
-  credits?: number;
+  type: string;
 }
 
 export const suggestColleges = async (
@@ -46,19 +45,8 @@ export const suggestColleges = async (
 
 export const parseGradesFromText = async (rawText: string): Promise<ExtractedCourse[]> => {
   const prompt = `
-    Analyze this text from a high school transcript and extract the courses using this exact schema:
-    [{"courseName": "String", "grade": Number (0-100), "credits": Number, "level": "Regular" | "Honors" | "AP" | "IB" | "Dual Enrollment"}]
-
-    Rules:
-    1. Extract full academic title of the class.
-    2. Grade must be a final percentage (e.g. 94). Prefer final or semester over progress or quarter.
-    3. Extract credits (e.g. 0.5, 1.0). Default to 1.0 if not listed.
-    4. Level rules:
-       - Starts/contains "AP", "Advanced Placement", "‡" -> AP
-       - Contains/ends "Honors", "Hon", "H", "*" -> Honors
-       - "IB" or "International Baccalaureate" -> IB
-       - "DE" or "Dual Enroll" -> Dual Enrollment
-       - Otherwise -> Regular
+    Extract courses and percentage grades from this student portal snippet.
+    Classify Level: "AP", "Honors", "Dual Enrollment", "Regular".
     
     Text: ${rawText}
   `;
@@ -78,20 +66,24 @@ export const parseGradesFromText = async (rawText: string): Promise<ExtractedCou
 
 export const parseGradesFromImage = async (base64Image: string, mimeType: string): Promise<ExtractedCourse[]> => {
   const prompt = `
-    Analyze this report card image and extract the courses.
-    Return using exactly this JSON array schema:
-    [{"courseName": "String", "grade": Number (0-100), "credits": Number, "level": "Regular" | "Honors" | "AP" | "IB" | "Dual Enrollment"}]
-
-    Rules:
-    1. Extract full academic title of the class.
-    2. Grade must be a final percentage. Look for the final/semester grade column (e.g., "Sem 1", "Final").
-    3. Extract credits. Default to 1.0 if missing.
-    4. Level rules:
-       - Starts/contains "AP", "Advanced Placement", "‡" -> AP
-       - Contains/ends "Honors", "Hon", "H", "*" -> Honors
-       - "IB" or "International Baccalaureate" -> IB
-       - "DE" or "Dual Enroll" -> Dual Enrollment
-       - Otherwise -> Regular
+    Analyze the provided high school transcript or report card image and extract the grades. You MUST return EXACTLY a JSON array of objects representing courses. 
+    Each object MUST strictly follow this schema: 
+    { 
+      "name": "string", 
+      "grade": number, 
+      "type": "string" 
+    }
+    
+    Rules for extraction:
+    1. "grade": Extract the numeric percentage grade as a NUMBER (e.g., 94). DO NOT return letter grades or strings. If only a fraction is given (e.g., 45/50), compute it to a percentage out of 100.
+    2. "name": Extract the clear name of the course (e.g., "Biology", "World History").
+    3. "type": Determine the course level strictly as one of the following exact string values: "AP", "Honors", "Dual Enrollment", "IB", or "Regular".
+       Logic for mapping courses to levels:
+       - If course name contains "AP" or "Adv Placement", use "AP".
+       - If course name contains "Dual", "DC", or "Dual Credit", use "Dual Enrollment".
+       - If course name contains "Honors", "Pre-AP", "PreAP", or "Adv", use "Honors".
+       - If course name contains "IB", use "IB".
+       - Otherwise, if no specific designation is found, use "Regular".
   `;
 
   try {
@@ -100,21 +92,61 @@ export const parseGradesFromImage = async (base64Image: string, mimeType: string
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ base64Image, mimeType, prompt }),
     });
+    
     if (!res.ok) {
-        throw new Error("Failed server response");
+        throw new Error(`Server responded with ${res.status}`);
     }
+
     const data = await res.json();
-    let resultJSON = data.result || "[]";
-    // clean markdown blocks if any
-    resultJSON = resultJSON.replace(/```json/g, "").replace(/```/g, "");
-    const parsed = JSON.parse(resultJSON);
-    if (!parsed || parsed.length === 0) {
-      console.warn("Gemini returned empty array for image. Raw response:", data.result);
+    let rawResult = data.result || "[]";
+    
+    if (rawResult.startsWith("\`\`\`")) {
+      rawResult = rawResult.replace(/^\`\`\`(?:json)?\n?/i, "").replace(/\n?\`\`\`$/i, "").trim();
     }
-    return parsed;
-  } catch (error) {
-    console.error("parseGradesFromImage Error:", error);
-    throw new Error("Processing error.");
+    
+    let parsedData: any;
+    try {
+      parsedData = JSON.parse(rawResult);
+    } catch (parseError) {
+      console.error("JSON parsing error on raw result:", rawResult, parseError);
+      throw new Error("Failed to parse the response as JSON.");
+    }
+
+    if (!Array.isArray(parsedData)) {
+      console.error("Parsed data is not an array:", parsedData);
+      throw new Error("API did not return a JSON array as expected.");
+    }
+
+    const validTypes = ["AP", "Honors", "Dual Enrollment", "IB", "Regular"];
+    const validatedData: ExtractedCourse[] = [];
+    for (let i = 0; i < parsedData.length; i++) {
+      const item = parsedData[i];
+      if (
+        item &&
+        typeof item === "object" &&
+        typeof item.name === "string" &&
+        typeof item.grade === "number" &&
+        typeof item.type === "string" &&
+        validTypes.includes(item.type)
+      ) {
+        validatedData.push({
+          name: item.name.trim(),
+          grade: item.grade,
+          type: item.type
+        });
+      } else {
+        console.warn(`Skipping invalid course object at index ${i}:`, item);
+      }
+    }
+
+    if (validatedData.length === 0 && parsedData.length > 0) {
+      throw new Error("No valid course structures found in the response.");
+    }
+    
+    return validatedData;
+  } catch (error: any) {
+    console.error("Image parsing error:", error);
+    throw new Error(error.message || "Failed to process the image. Please try again.");
   }
 };
 

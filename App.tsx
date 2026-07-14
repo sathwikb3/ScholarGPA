@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { Course, CourseType, GPASettings, CalculationResult, HistoryEntry, Assignment, GradingScale, WeightingMethod } from './types';
+import { Course, CourseType, GPASettings, CalculationResult, HistoryEntry, Assignment } from './types';
 import { DEFAULT_SETTINGS } from './constants';
 import { parseGradesFromImage, ExtractedCourse } from './services/geminiService';
 import CourseRow from './components/CourseRow';
@@ -19,35 +19,23 @@ import GradeConverter from './components/GradeConverter';
 import GradingGuide from './components/GradingGuide';
 import TrendChart from './components/TrendChart';
 import AdmissionsProfileTab from './components/AdmissionsProfileTab';
+import { initAuth, googleSignIn, logout, getAccessToken } from './firebase';
+import { User } from 'firebase/auth';
 import { exportGpaReportAsPdf } from './services/pdfExportService';
-import PomodoroTimer from './components/PomodoroTimer';
+import { useFirestoreSync } from './services/useFirestoreSync';
 import { 
   Plus, Settings, Calculator, BookOpen, GraduationCap, 
   Camera, Loader2, History, ClipboardPaste, RotateCcw, 
   FileSpreadsheet, Target, School, User as UserIcon, MapPin, Trophy,
-  ListTodo, Info, Sparkles, ArrowRightLeft, LogOut, LogIn, Download, Timer
+  ListTodo, Info, Sparkles, ArrowRightLeft, LogOut, LogIn, Download
 } from 'lucide-react';
 
-export const percentToLetter = (percent: number) => {
-  if (percent >= 97) return 'A+';
-  if (percent >= 93) return 'A';
-  if (percent >= 90) return 'A-';
-  if (percent >= 87) return 'B+';
-  if (percent >= 83) return 'B';
-  if (percent >= 80) return 'B-';
-  if (percent >= 77) return 'C+';
-  if (percent >= 73) return 'C';
-  if (percent >= 70) return 'C-';
-  if (percent >= 67) return 'D+';
-  if (percent >= 63) return 'D';
-  if (percent >= 60) return 'D-';
-  return 'F';
-};
-
-type ViewType = 'calculator' | 'grade' | 'admissions' | 'guide' | 'timer';
+type ViewType = 'calculator' | 'grade' | 'admissions' | 'guide';
 
 const App: React.FC = () => {
   const [activeView, setActiveView] = useState<ViewType>('calculator');
+  const [user, setUser] = useState<User | null>(null);
+  const [token, setToken] = useState<string | null>(null);
   const [courses, setCourses] = useState<Course[]>([
     { id: uuidv4(), name: 'English III', gradePercent: 95, type: CourseType.Regular, credits: 1 },
     { id: uuidv4(), name: 'AP Statistics', gradePercent: 88, type: CourseType.AP, credits: 1 },
@@ -61,6 +49,17 @@ const App: React.FC = () => {
 
   const [settings, setSettings] = useState<GPASettings>(DEFAULT_SETTINGS);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+
+  const { isSyncing, lastSyncTime } = useFirestoreSync(
+    user,
+    { courses, assignments, history, settings },
+    (remoteData) => {
+      if (remoteData.courses) setCourses(remoteData.courses);
+      if (remoteData.assignments) setAssignments(remoteData.assignments);
+      if (remoteData.history) setHistory(remoteData.history);
+      if (remoteData.settings) setSettings(remoteData.settings);
+    }
+  );
   
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
@@ -72,6 +71,40 @@ const App: React.FC = () => {
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const csvInputRef = useRef<HTMLInputElement>(null);
+
+  const [hasPaid, setHasPaid] = useState<boolean>(() => {
+    return localStorage.getItem('scholar_gpa_paid') === 'true';
+  });
+  const [isCheckoutLoading, setIsCheckoutLoading] = useState(false);
+
+  useEffect(() => {
+    const query = new URLSearchParams(window.location.search);
+    if (query.get('success')) {
+      setHasPaid(true);
+      localStorage.setItem('scholar_gpa_paid', 'true');
+      window.history.replaceState({}, '', window.location.pathname);
+    } else if (query.get('canceled')) {
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
+
+  const handleUpgrade = async () => {
+    setIsCheckoutLoading(true);
+    try {
+      const res = await fetch('/api/create-checkout-session', { method: 'POST' });
+      const data = await res.json();
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        alert(data.error || 'Failed to create checkout session');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('An error occurred while connecting to payment provider.');
+    } finally {
+      setIsCheckoutLoading(false);
+    }
+  };
 
   const getTimestampFromSemesterYear = (semester: string, year: string) => {
     const [startYearStr, endYearStr] = year.split('-');
@@ -91,6 +124,14 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
+    const unsubscribe = initAuth((u, t) => {
+      setUser(u);
+      setToken(t);
+    }, () => {
+      setUser(null);
+      setToken(null);
+    });
+
     const savedHistory = localStorage.getItem('scholar_gpa_history');
     if (savedHistory) {
       try {
@@ -107,14 +148,10 @@ const App: React.FC = () => {
         console.error("Failed to parse settings", e);
       }
     }
-    const savedCourses = localStorage.getItem('scholar_gpa_courses');
-    if (savedCourses) {
-      try {
-        setCourses(JSON.parse(savedCourses));
-      } catch (e) {
-        console.error("Failed to parse courses", e);
-      }
-    }
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -124,13 +161,6 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('scholar_gpa_settings', JSON.stringify(settings));
   }, [settings]);
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      localStorage.setItem('scholar_gpa_courses', JSON.stringify(courses));
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [courses]);
 
   const resizeImage = (file: File, maxWidth = 1000): Promise<{base64: string, mimeType: string}> => {
     return new Promise((resolve, reject) => {
@@ -193,22 +223,12 @@ const App: React.FC = () => {
      if (extracted && extracted.length > 0) {
          const newCourses: Course[] = extracted.map(c => ({
              id: uuidv4(),
-             name: c.courseName || (c as any).name || 'Unknown Course',
-             gradePercent: c.grade || 0,
-             gradeLetter: percentToLetter(c.grade || 0),
-             type: mapScannedTypeToEnum(c.level || (c as any).type),
-             credits: c.credits !== undefined ? c.credits : 1
+             name: c.name,
+             gradePercent: c.grade,
+             type: mapScannedTypeToEnum(c.type),
+             credits: 1
          }));
-         setCourses(prev => {
-             // If the existing list is just the default empty placeholder, replace it entirely
-             if (prev.length === 1 && prev[0].name === '') {
-                 return newCourses;
-             }
-             if (prev.length === 0) return newCourses;
-             
-             // Check if we should merge or append... Let's just append to be safe!
-             return [...prev, ...newCourses];
-         });
+         setCourses(newCourses);
       }
   };
 
@@ -261,9 +281,9 @@ const App: React.FC = () => {
       const optimized = await resizeImage(file);
       const extracted = await parseGradesFromImage(optimized.base64, optimized.mimeType);
       handleExtracted(extracted);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert("Failed to analyze image quickly. Please check the quality or try again.");
+      alert(err.message || "Failed to analyze image. Please check the quality or try again.");
     } finally {
       setIsScanning(false);
     }
@@ -283,96 +303,27 @@ const App: React.FC = () => {
     let totalUnweightedPoints = 0;
     let totalCredits = 0;
 
-    const getBasePoint = (letter: string, scale: GradingScale) => {
-      const up = letter.toUpperCase();
-      let point = 0;
-      
-      switch (up) {
-        case 'A+': point = 4.0; break;
-        case 'A': point = 4.0; break;
-        case 'A-': point = 3.7; break;
-        case 'B+': point = 3.3; break;
-        case 'B': point = 3.0; break;
-        case 'B-': point = 2.7; break;
-        case 'C+': point = 2.3; break;
-        case 'C': point = 2.0; break;
-        case 'C-': point = 1.7; break;
-        case 'D+': point = 1.3; break;
-        case 'D': point = 1.0; break;
-        case 'D-': point = 0.7; break;
-        case 'F': point = 0.0; break;
-        default: 
-            const l = up.charAt(0);
-            if (l === 'A') point = 4;
-            else if (l === 'B') point = 3;
-            else if (l === 'C') point = 2;
-            else if (l === 'D') point = 1;
-            else point = 0;
-            break;
-      }
-
-      if ((scale === GradingScale.FivePoint || scale === GradingScale.SixPoint) && point > 0) {
-        point += 1;
-      }
-      return point;
-    };
-
-
-
     courses.forEach(course => {
+        const grade = course.gradePercent;
         const credits = course.credits || 0;
         totalCredits += credits;
 
-        const isPercentage = settings.gradingScale === GradingScale.Percentage;
-        const isSixPoint = settings.gradingScale === GradingScale.SixPoint;
-        
         let unweightedBase = 0;
-        let weightedBase = 0;
-
-        if (isPercentage) {
-            unweightedBase = course.gradePercent;
-            weightedBase = course.gradePercent;
-            
-            if (settings.weightingMethod === WeightingMethod.Weighted) {
-                if (course.type === CourseType.AP || course.type === CourseType.IB || course.type === CourseType.DualEnrollment) {
-                    weightedBase += 10;
-                } else if (course.type === CourseType.Honors) {
-                    weightedBase += 5;
-                }
-            }
-        } else if (
-            settings.gradingScale === GradingScale.SixPoint || 
-            (settings.weightingMethod === WeightingMethod.Weighted && 
-             (settings.gradingScale === GradingScale.FivePoint || settings.gradingScale === GradingScale.FourPoint))
-        ) {
-            let offset = 0;
-            if (settings.gradingScale === GradingScale.FivePoint) offset = 1;
-            if (settings.gradingScale === GradingScale.FourPoint) offset = 2;
-            
-            const basePoints = (course.gradePercent - 50) / 10;
-            
-            unweightedBase = basePoints - offset;
-            weightedBase = unweightedBase;
-            
-            if (settings.weightingMethod === WeightingMethod.Weighted) {
-                const regularWeight = settings.weights[CourseType.Regular] || 5.0;
-                const classWeight = settings.weights[course.type] || regularWeight;
-                weightedBase += (classWeight - regularWeight);
-            }
-        } else {
-            const letter = course.gradeLetter || percentToLetter(course.gradePercent);
-            unweightedBase = getBasePoint(letter, settings.gradingScale || GradingScale.FourPoint);
-            weightedBase = unweightedBase;
-            
-            if (settings.weightingMethod === WeightingMethod.Weighted) {
-                const regularWeight = settings.weights[CourseType.Regular] || 5.0;
-                const classWeight = settings.weights[course.type] || regularWeight;
-                weightedBase += (classWeight - regularWeight);
-            }
-        }
-
+        if (grade >= 90) unweightedBase = 4.0;
+        else if (grade >= 80) unweightedBase = 3.0;
+        else if (grade >= 70) unweightedBase = 2.0;
+        else if (grade >= 60) unweightedBase = 1.0;
         totalUnweightedPoints += (unweightedBase * credits);
-        totalWeightedPoints += (weightedBase * credits);
+
+        let weightedBase = 0;
+        if (course.type === CourseType.AP || course.type === CourseType.IB || course.type === CourseType.DualEnrollment) {
+            weightedBase = (grade - 40) / 10;
+        } else if (course.type === CourseType.Honors) {
+            weightedBase = (grade - 45) / 10;
+        } else {
+            weightedBase = (grade - 50) / 10;
+        }
+        totalWeightedPoints += (Math.max(0, weightedBase) * credits);
     });
 
     const termWeightedGpa = totalCredits > 0 ? totalWeightedPoints / totalCredits : 0;
@@ -399,7 +350,7 @@ const App: React.FC = () => {
       cumulativeWeightedGPA: cumulativeWeighted,
       cumulativeUnweightedGPA: cumulativeUnweighted,
     };
-  }, [courses, history, settings]);
+  }, [courses, history]);
 
   const openSaveSnapshotModal = () => {
     if (courses.length === 0) {
@@ -452,7 +403,7 @@ const App: React.FC = () => {
       <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm backdrop-blur-md bg-white/90">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-xl text-white shadow-lg transition-all duration-300 ${activeView === 'admissions' ? 'bg-amber-500 shadow-amber-300' : activeView === 'grade' ? 'bg-[#196e1f] shadow-emerald-300' : activeView === 'guide' ? 'bg-rose-900 shadow-rose-300' : activeView === 'timer' ? 'bg-indigo-600 shadow-indigo-300' : 'bg-blue-900 shadow-blue-300'}`}>
+            <div className={`p-2 rounded-xl text-white shadow-lg transition-all duration-300 ${activeView === 'admissions' ? 'bg-amber-500 shadow-amber-300' : activeView === 'grade' ? 'bg-[#196e1f] shadow-emerald-300' : activeView === 'guide' ? 'bg-rose-900 shadow-rose-300' : 'bg-blue-900 shadow-blue-300'}`}>
                 <GraduationCap size={24} />
             </div>
             <div className="hidden sm:block">
@@ -477,13 +428,6 @@ const App: React.FC = () => {
               <span className="hidden md:inline">Grade Calc</span>
             </button>
             <button 
-              onClick={() => setActiveView('timer')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm transition-all ${activeView === 'timer' ? 'bg-white text-indigo-600 shadow-sm font-semibold' : 'text-slate-500 hover:text-slate-700 font-medium'}`}
-            >
-              <Timer size={18} />
-              <span className="hidden md:inline">Timer</span>
-            </button>
-            <button 
               onClick={() => setActiveView('admissions')}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm transition-all ${activeView === 'admissions' ? 'bg-white text-amber-600 shadow-sm font-semibold' : 'text-slate-500 hover:text-slate-700 font-medium'}`}
             >
@@ -501,6 +445,15 @@ const App: React.FC = () => {
 
           <div className="flex items-center gap-2">
             
+            {user && (
+              <div className="flex flex-col text-[9px] text-right mr-2 justify-center hidden sm:flex text-slate-400">
+                {isSyncing ? (
+                  <span className="text-blue-500 animate-pulse">Syncing...</span>
+                ) : lastSyncTime ? (
+                  <span className="text-emerald-500">Cloud Sync On</span>
+                ) : null}
+              </div>
+            )}
             <button onClick={() => setIsHistoryOpen(true)} className="p-2 text-slate-500 hover:bg-slate-100 rounded-full transition-colors relative">
                 <History size={22} />
                 {history.length > 0 && <span className={`absolute top-1.5 right-1.5 w-2 h-2 rounded-full border-2 border-white ${activeView === 'admissions' ? 'bg-amber-500' : 'bg-blue-800'}`}></span>}
@@ -508,10 +461,52 @@ const App: React.FC = () => {
             <button onClick={() => setIsSettingsOpen(true)} className="p-2 text-slate-500 hover:bg-slate-100 rounded-full transition-colors">
               <Settings size={22} />
             </button>
+            {user ? (
+              <div className="flex items-center gap-3 bg-slate-50 px-2 py-1 rounded-full border border-slate-200 ml-2">
+                <img 
+                  src={user.photoURL || `https://ui-avatars.com/api/?name=${user.email || 'User'}&background=random`} 
+                  alt="Profile" 
+                  className="w-8 h-8 rounded-full border border-slate-200" 
+                  title="Google Account Auth"
+                />
+                <div className="hidden lg:flex flex-col text-left">
+                  <span className="text-xs font-bold text-slate-700 leading-tight">{user.displayName || 'Student'}</span>
+                  <span className="text-[10px] text-slate-500 leading-tight max-w-[120px] truncate" title="Password secured by Google">{user.email}</span>
+                </div>
+                <button onClick={logout} className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-full transition-colors" title="Sign out">
+                  <LogOut size={18} />
+                </button>
+              </div>
+            ) : (
+              <button onClick={googleSignIn} className="flex items-center gap-2 px-3 py-1.5 bg-blue-100 text-blue-900 font-semibold hover:bg-blue-200 rounded-full transition-colors ml-2" title="Sign in with Google">
+                <LogIn size={18} />
+                <span className="hidden sm:inline text-xs">Sign In</span>
+              </button>
+            )}
           </div>
         </div>
       </header>
 
+      {user && !hasPaid ? (
+        <div className="max-w-md mx-auto mt-20 p-8 bg-white rounded-3xl shadow-xl border border-slate-100 text-center animate-in fade-in zoom-in duration-500">
+          <div className="bg-blue-50 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6">
+            <Trophy size={40} className="text-blue-600" />
+          </div>
+          <h2 className="text-2xl font-bold text-slate-800 mb-2">Unlock Cloud Sync</h2>
+          <p className="text-slate-500 mb-8 leading-relaxed">
+            You're signed in! To backup your data to the cloud and unlock AI insights across all devices, you need Premium Access.
+          </p>
+          <button 
+            onClick={handleUpgrade}
+            disabled={isCheckoutLoading}
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-6 rounded-2xl flex items-center justify-center gap-2 transition-all shadow-md hover:shadow-lg disabled:opacity-70"
+          >
+            {isCheckoutLoading ? <Loader2 size={20} className="animate-spin" /> : <Sparkles size={20} />}
+            {isCheckoutLoading ? 'Connecting...' : 'Pay $5.00 to Unlock'}
+          </button>
+          <p className="text-[11px] text-slate-400 mt-4 uppercase tracking-wider font-medium">One-time payment. Lifetime access.</p>
+        </div>
+      ) : (
       <main className="max-w-6xl mx-auto px-4 py-8">
         
         {activeView === 'calculator' && (
@@ -552,44 +547,13 @@ const App: React.FC = () => {
                     </div>
                 </div>
 
-                <div className="bg-white rounded-2xl p-6 mb-8 shadow-sm border border-slate-200 relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-bl-full -z-10 opacity-50"></div>
-                    <h2 className="text-base flex items-center gap-2 font-black text-blue-950 uppercase tracking-widest mb-6 pb-4 border-b border-slate-100">
-                        <Settings size={18} className="text-blue-900" /> Calculation Settings
-                    </h2>
-                    <div className="flex flex-col sm:flex-row gap-6">
-                        <div className="flex-1">
-                            <label className="block text-xs uppercase tracking-wider text-slate-500 font-semibold mb-2">Calculation Model</label>
-                            <select 
-                                value={`${settings.gradingScale || GradingScale.FourPoint}-${settings.weightingMethod || WeightingMethod.Unweighted}`}
-                                onChange={(e) => {
-                                    const [scale, weight] = e.target.value.split('-');
-                                    setSettings({
-                                        ...settings, 
-                                        gradingScale: scale as GradingScale, 
-                                        weightingMethod: weight as WeightingMethod
-                                    });
-                                }}
-                                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-800 font-medium text-slate-700 bg-white"
-                            >
-                                <option value={`${GradingScale.FourPoint}-${WeightingMethod.Unweighted}`}>Unweighted 4.0 Scale</option>
-                                <option value={`${GradingScale.FourPoint}-${WeightingMethod.Weighted}`}>Weighted 4.0 Scale</option>
-                                <option value={`${GradingScale.FivePoint}-${WeightingMethod.Weighted}`}>Weighted 5.0 Scale</option>
-                                <option value={`${GradingScale.SixPoint}-${WeightingMethod.Weighted}`}>Weighted 6.0 Scale</option>
-                                <option value={`${GradingScale.Percentage}-${WeightingMethod.Unweighted}`}>100-Point (% Numeric Average)</option>
-                                <option value={`${GradingScale.Percentage}-${WeightingMethod.Weighted}`}>100-Point (% Weighted Numeric)</option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
-
                 <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-3 mb-4">
                     <h2 className="text-lg text-slate-800 flex items-center gap-2 font-semibold">
                         <BookOpen size={20} className="text-blue-900" />
                         Current Term Grades
                     </h2>
                     <div className="flex flex-wrap gap-2">
-                        <button onClick={() => exportGpaReportAsPdf(courses, calculationResult, history)} className="text-[11px] text-blue-900 hover:text-blue-950 px-3 py-1.5 hover:bg-blue-50 rounded-lg border border-blue-100 flex items-center gap-1.5 uppercase tracking-wide font-semibold transition-colors">
+                        <button onClick={() => exportGpaReportAsPdf(courses, calculationResult, history, settings, user?.email || user?.displayName || undefined)} className="text-[11px] text-blue-900 hover:text-blue-950 px-3 py-1.5 hover:bg-blue-50 rounded-lg border border-blue-100 flex items-center gap-1.5 uppercase tracking-wide font-semibold transition-colors">
                             <Download size={14} /> Export PDF
                         </button>
                         <button onClick={() => setIsImportOpen(true)} className="text-[11px] text-blue-900 hover:text-blue-950 px-3 py-1.5 hover:bg-blue-50 rounded-lg border border-blue-100 flex items-center gap-1.5 uppercase tracking-wide font-semibold transition-colors">
@@ -628,7 +592,7 @@ const App: React.FC = () => {
                             </div>
                         ) : (
                             courses.map(course => (
-                            <CourseRow key={course.id} course={course} settings={settings} onChange={updateCourse} onRemove={removeCourse} />
+                            <CourseRow key={course.id} course={course} onChange={updateCourse} onRemove={removeCourse} />
                             ))
                         )}
                     </div>
@@ -678,21 +642,6 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {activeView === 'timer' && (
-          <div className="animate-in fade-in duration-500 py-12">
-            <PomodoroTimer 
-              courses={courses} 
-              onLogTime={(courseId, seconds) => {
-                setCourses(prev => prev.map(c => 
-                  c.id === courseId 
-                    ? { ...c, studyTimeLogged: (c.studyTimeLogged || 0) + seconds } 
-                    : c
-                ));
-              }}
-            />
-          </div>
-        )}
-
         {activeView === 'admissions' && (
           <AdmissionsProfileTab 
             settings={settings}
@@ -705,15 +654,7 @@ const App: React.FC = () => {
           <GradingGuide />
         )}
       </main>
-
-      <footer className="max-w-6xl mx-auto px-4 py-8 mt-12 border-t border-slate-200 text-center">
-        <p className="text-slate-500 text-sm">
-          Any questions, feedback, or concerns? Please contact{' '}
-          <a href="mailto:sathwikbavirisetty654@gmail.com" className="text-blue-600 hover:text-blue-800 font-medium transition-colors">
-            sathwikbavirisetty654@gmail.com
-          </a>
-        </p>
-      </footer>
+      )}
 
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} settings={settings} onUpdate={setSettings} />
       <HistoryModal isOpen={isHistoryOpen} onClose={() => setIsHistoryOpen(false)} history={history} onDelete={(id) => setHistory(h => h.filter(e => e.id !== id))} onOpenAddPastGpa={() => setIsAddPastGpaOpen(true)} />
@@ -727,7 +668,6 @@ const App: React.FC = () => {
         result={calculationResult} 
         settings={settings} 
         activeView={activeView}
-        onSettingsUpdate={(newSettings) => setSettings(prev => ({ ...prev, ...newSettings }))}
       />
     </div>
   );

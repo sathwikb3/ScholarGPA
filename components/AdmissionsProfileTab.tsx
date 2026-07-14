@@ -41,11 +41,40 @@ const AdmissionsProfileTab: React.FC<Props> = ({ settings, setSettings, gpa }) =
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 border-b border-slate-100 pb-8">
-          <div className="space-y-4">
-            <h3 className="text-sm font-semibold text-slate-800 uppercase tracking-wide flex items-center gap-2">
-              <Building2 size={16} className="text-slate-400" /> High School Context
-            </h3>
-            <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-6">
+            <div className="space-y-4">
+              <h3 className="text-sm font-semibold text-slate-800 uppercase tracking-wide flex items-center gap-2">
+                <User size={16} className="text-slate-400" /> Contact Information
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2 col-span-2 sm:col-span-1">
+                  <label className="text-[10px] uppercase tracking-widest text-slate-400 font-semibold">Email</label>
+                  <input 
+                    type="email"
+                    value={settings.email || ''}
+                    onChange={(e) => setSettings({...settings, email: e.target.value})}
+                    placeholder="e.g. student@school.edu"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-800 focus:ring-2 focus:ring-amber-500 outline-none text-sm font-medium"
+                  />
+                </div>
+                <div className="space-y-2 col-span-2 sm:col-span-1">
+                  <label className="text-[10px] uppercase tracking-widest text-slate-400 font-semibold">Phone</label>
+                  <input 
+                    type="tel"
+                    value={settings.phone || ''}
+                    onChange={(e) => setSettings({...settings, phone: e.target.value})}
+                    placeholder="e.g. (123)-456-7890"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-800 focus:ring-2 focus:ring-amber-500 outline-none text-sm font-medium"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <h3 className="text-sm font-semibold text-slate-800 uppercase tracking-wide flex items-center gap-2">
+                <Building2 size={16} className="text-slate-400" /> High School Context
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <label className="text-[10px] uppercase tracking-widest text-slate-400 font-semibold">High School</label>
                 <input 
@@ -78,11 +107,44 @@ const AdmissionsProfileTab: React.FC<Props> = ({ settings, setSettings, gpa }) =
                   ))}
                 </select>
               </div>
+              <div className="space-y-2 col-span-2 sm:col-span-1">
+                <label className="text-[10px] uppercase tracking-widest text-slate-400 font-semibold">Class Rank</label>
+                <input 
+                  type="number"
+                  value={settings.classRank || ''}
+                  onChange={(e) => setSettings({...settings, classRank: parseInt(e.target.value) || undefined})}
+                  placeholder="e.g. 15"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-800 focus:ring-2 focus:ring-amber-500 outline-none text-sm font-medium"
+                />
+              </div>
+              <div className="space-y-2 col-span-2 sm:col-span-1">
+                <label className="text-[10px] uppercase tracking-widest text-slate-400 font-semibold">Class Size</label>
+                <input 
+                  type="number"
+                  value={settings.classSize || ''}
+                  onChange={(e) => setSettings({...settings, classSize: parseInt(e.target.value) || 0})}
+                  placeholder="e.g. 400"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-800 focus:ring-2 focus:ring-amber-500 outline-none text-sm font-medium"
+                />
+              </div>
             </div>
             
             <div className="pt-2">
                 <div className="text-[10px] uppercase tracking-widest text-slate-400 mb-1 font-semibold">Final Cumulative Average</div>
                 <div className="text-3xl font-semibold text-slate-800">{gpa.toFixed(3)}</div>
+                
+                {settings.classRank && settings.classSize && settings.classSize > 0 && (
+                  <div className="mt-4 pt-4 border-t border-slate-100">
+                    <div className="text-[10px] uppercase tracking-widest text-slate-400 mb-1 font-semibold">Class Rank Percentile</div>
+                    <div className="text-xl font-semibold text-amber-600">
+                      Top {Math.ceil((settings.classRank / settings.classSize) * 100)}%
+                    </div>
+                    <div className="text-xs text-slate-500 mt-1">
+                      Rank {settings.classRank} of {settings.classSize}
+                    </div>
+                  </div>
+                )}
+            </div>
             </div>
           </div>
 

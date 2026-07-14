@@ -1,68 +1,30 @@
 
 import React from 'react';
-import { Course, CourseType, GPASettings, GradingScale } from '../types';
-import { Trash2, Timer } from 'lucide-react';
+import { Course, CourseType } from '../types';
+import { Trash2 } from 'lucide-react';
 
 interface CourseRowProps {
   course: Course;
-  settings: GPASettings;
   onChange: (id: string, field: keyof Course, value: any) => void;
   onRemove: (id: string) => void;
 }
 
-const LETTER_GRADES = ['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-', 'D+', 'D', 'D-', 'F'];
-
-const percentToLetter = (percent: number) => {
-  if (percent >= 97) return 'A+';
-  if (percent >= 93) return 'A';
-  if (percent >= 90) return 'A-';
-  if (percent >= 87) return 'B+';
-  if (percent >= 83) return 'B';
-  if (percent >= 80) return 'B-';
-  if (percent >= 77) return 'C+';
-  if (percent >= 73) return 'C';
-  if (percent >= 70) return 'C-';
-  if (percent >= 67) return 'D+';
-  if (percent >= 63) return 'D';
-  if (percent >= 60) return 'D-';
-  return 'F';
-};
-
-const CourseRow: React.FC<CourseRowProps> = ({ course, settings, onChange, onRemove }) => {
-  const formatTime = (seconds?: number) => {
-    if (!seconds) return null;
-    const hours = Math.floor(seconds / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
-    if (hours > 0) return `${hours}h ${mins}m`;
-    return `${mins}m`;
-  };
-
-  const isPercentageScale = settings?.gradingScale === GradingScale.Percentage;
-  const currentLetter = course.gradeLetter || percentToLetter(course.gradePercent);
-
+const CourseRow: React.FC<CourseRowProps> = ({ course, onChange, onRemove }) => {
   return (
     <div className="flex flex-col md:flex-row gap-3 p-4 bg-white border border-slate-200 rounded-lg shadow-sm items-center transition-all hover:shadow-md mb-3 group">
       <div className="flex-grow w-full md:w-auto">
         <label className="block text-[10px] text-slate-400 mb-1 md:hidden uppercase tracking-wider">Course Name</label>
-        <div className="relative">
-          <input
-            type="text"
-            value={course.name}
-            onChange={(e) => onChange(course.id, 'name', e.target.value)}
-            placeholder="e.g. English III"
-            className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-800 focus:border-blue-800 text-sm font-medium"
-          />
-          {course.studyTimeLogged ? (
-            <div className="absolute right-3 top-2.5 flex items-center gap-1 text-[10px] text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded font-bold" title="Study time logged">
-              <Timer size={10} />
-              {formatTime(course.studyTimeLogged)}
-            </div>
-          ) : null}
-        </div>
+        <input
+          type="text"
+          value={course.name}
+          onChange={(e) => onChange(course.id, 'name', e.target.value)}
+          placeholder="e.g. English III"
+          className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-800 focus:border-blue-800 text-sm font-medium"
+        />
       </div>
 
       <div className="w-full md:w-32">
-        <label className="block text-[10px] text-slate-400 mb-1 md:hidden uppercase tracking-wider">Grade</label>
+        <label className="block text-[10px] text-slate-400 mb-1 md:hidden uppercase tracking-wider">Grade (%)</label>
         <div className="relative">
           <input
             type="number"
@@ -72,19 +34,11 @@ const CourseRow: React.FC<CourseRowProps> = ({ course, settings, onChange, onRem
             onChange={(e) => {
               const val = e.target.value === '' ? 0 : parseFloat(e.target.value);
               onChange(course.id, 'gradePercent', val);
-              onChange(course.id, 'gradeLetter', percentToLetter(val));
             }}
-            className="w-full pl-3 pr-16 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-800 focus:border-blue-800 text-sm font-medium text-slate-700"
+            className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-800 focus:border-blue-800 text-sm font-medium text-slate-700"
             placeholder="0-100"
           />
-          <div className="absolute right-3 top-2 flex items-center gap-1">
-            <span className="text-slate-400 text-xs font-medium">%</span>
-            {!isPercentageScale && (
-              <span className="bg-slate-100 text-slate-600 text-[10px] px-1.5 py-0.5 rounded font-bold border border-slate-200">
-                {currentLetter}
-              </span>
-            )}
-          </div>
+          <span className="absolute right-3 top-2 text-slate-400 text-xs font-medium">%</span>
         </div>
       </div>
 
@@ -110,7 +64,7 @@ const CourseRow: React.FC<CourseRowProps> = ({ course, settings, onChange, onRem
             <select
             value={course.type}
             onChange={(e) => onChange(course.id, 'type', e.target.value as CourseType)}
-            className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-800 focus:border-blue-800 text-sm bg-white appearance-none pr-8 font-medium text-slate-700"
+            className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-800 focus:border-blue-800 text-sm bg-white appearance-none pr-8 font-medium"
             >
             {Object.values(CourseType).map((t) => (
                 <option key={t} value={t}>

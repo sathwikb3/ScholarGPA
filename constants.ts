@@ -1,9 +1,7 @@
 
-import { CourseType, GPASettings, GradingScale, WeightingMethod } from './types';
+import { CourseType, GPASettings } from './types';
 
 export const DEFAULT_SETTINGS: GPASettings = {
-  gradingScale: GradingScale.FourPoint,
-  weightingMethod: WeightingMethod.Weighted,
   weights: {
     [CourseType.Regular]: 5.0,
     [CourseType.Honors]: 5.5,
@@ -18,7 +16,10 @@ export const DEFAULT_SETTINGS: GPASettings = {
   school: '',
   city: '',
   gradeLevel: 9,
+  classRank: undefined,
   classSize: 400,
+  phone: '(945)-233-7424',
+  email: 'sathwikbavirisetty654@gmail.com',
   intendedMajor: '',
   dreamSchools: [],
   satScore: undefined,
