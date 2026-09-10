@@ -19,6 +19,7 @@ import GradeConverter from './components/GradeConverter';
 import GradingGuide from './components/GradingGuide';
 import TrendChart from './components/TrendChart';
 import AdmissionsProfileTab from './components/AdmissionsProfileTab';
+import UpgradeView from './components/UpgradeView';
 import { initAuth, googleSignIn, logout, getAccessToken } from './firebase';
 import { User } from 'firebase/auth';
 import { exportGpaReportAsPdf } from './services/pdfExportService';
@@ -30,7 +31,7 @@ import {
   ListTodo, Info, Sparkles, ArrowRightLeft, LogOut, LogIn, Download
 } from 'lucide-react';
 
-type ViewType = 'calculator' | 'grade' | 'admissions' | 'guide';
+type ViewType = 'calculator' | 'grade' | 'admissions' | 'guide' | 'upgrade';
 
 const App: React.FC = () => {
   const [activeView, setActiveView] = useState<ViewType>('calculator');
@@ -441,6 +442,15 @@ const App: React.FC = () => {
               <BookOpen size={18} />
               <span className="hidden md:inline">Grading Guide</span>
             </button>
+            {!hasPaid && (
+              <button 
+                onClick={() => setActiveView('upgrade')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm transition-all ${activeView === 'upgrade' ? 'bg-white text-amber-600 shadow-sm font-semibold' : 'text-amber-500 hover:text-amber-600 font-bold'}`}
+              >
+                <Sparkles size={18} />
+                <span className="hidden md:inline">Premium</span>
+              </button>
+            )}
           </nav>
 
           <div className="flex items-center gap-2">
@@ -487,26 +497,6 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      {user && !hasPaid ? (
-        <div className="max-w-md mx-auto mt-20 p-8 bg-white rounded-3xl shadow-xl border border-slate-100 text-center animate-in fade-in zoom-in duration-500">
-          <div className="bg-blue-50 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6">
-            <Trophy size={40} className="text-blue-600" />
-          </div>
-          <h2 className="text-2xl font-bold text-slate-800 mb-2">Unlock Cloud Sync</h2>
-          <p className="text-slate-500 mb-8 leading-relaxed">
-            You're signed in! To backup your data to the cloud and unlock AI insights across all devices, you need Premium Access.
-          </p>
-          <button 
-            onClick={handleUpgrade}
-            disabled={isCheckoutLoading}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-6 rounded-2xl flex items-center justify-center gap-2 transition-all shadow-md hover:shadow-lg disabled:opacity-70"
-          >
-            {isCheckoutLoading ? <Loader2 size={20} className="animate-spin" /> : <Sparkles size={20} />}
-            {isCheckoutLoading ? 'Connecting...' : 'Pay $5.00 to Unlock'}
-          </button>
-          <p className="text-[11px] text-slate-400 mt-4 uppercase tracking-wider font-medium">One-time payment. Lifetime access.</p>
-        </div>
-      ) : (
       <main className="max-w-6xl mx-auto px-4 py-8">
         
         {activeView === 'calculator' && (
@@ -653,8 +643,11 @@ const App: React.FC = () => {
         {activeView === 'guide' && (
           <GradingGuide />
         )}
+
+        {activeView === 'upgrade' && (
+          <UpgradeView handleUpgrade={handleUpgrade} isCheckoutLoading={isCheckoutLoading} />
+        )}
       </main>
-      )}
 
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} settings={settings} onUpdate={setSettings} />
       <HistoryModal isOpen={isHistoryOpen} onClose={() => setIsHistoryOpen(false)} history={history} onDelete={(id) => setHistory(h => h.filter(e => e.id !== id))} onOpenAddPastGpa={() => setIsAddPastGpaOpen(true)} />
